@@ -1,0 +1,50 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: cimg/php:8.0.3
+      - image: redis
+    steps:
+      - checkout
+      - run: cp .env.example .env
+      - run:
+          name: composer install
+          command: |
+            composer install -n --prefer-dist
+            composer dump-autoload
+      - run: php artisan key:generate
+      - run: php artisan config:clear
+      - run:
+          name: "Run Http Tests"
+          command: ./vendor/bin/phpunit tests/Feature
+      - run:
+          name: install dusk
+          command: |
+            php artisan dusk:install
+      - run: #STABLE
+          name: Install Chromedriver latest version
+          command: |
+            wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+            echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' | sudo tee /etc/apt/sources.list.d/google-chrome.list
+            sudo apt-get update
+            sudo apt-get install google-chrome-stable
+            CHROME_VERSION="$(google-chrome-stable --version)"
+            CHROMEDRIVER_RELEASE="$(echo $CHROME_VERSION | sed 's/^Google Chrome //')"
+            CHROMEDRIVER_RELEASE=${CHROMEDRIVER_RELEASE%%.*}
+            php artisan dusk:chrome-driver $CHROMEDRIVER_RELEASE
+            google-chrome-stable --headless --disable-gpu --remote-debugging-port=9222 http://localhost &
+
+      - run:
+          name: Start Chrome Driver
+          command: ./vendor/laravel/dusk/bin/chromedriver-linux
+          background: true
+
+      - run:
+          name: Run Laravel Server
+          command: php artisan serve
+          background: true
+
+
+      - run:
+          name: Run Browser Tests Tests
+          command: php artisan dusk tests/Browser/LoginTest.php
